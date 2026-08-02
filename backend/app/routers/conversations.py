@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User, Conversation, Message
 from ..schemas.conversation import (
-    ConversationCreate, ConversationRename, ConversationOut, MessageOut,
+    ConversationCreate, ConversationRename, ConversationOut, MessageOut, RatingRequest,
 )
 from ..deps import get_current_user
 
@@ -72,7 +72,8 @@ def list_messages(
     return [
         MessageOut(
             id=m.id, conversation_id=m.conversation_id, role=m.role,
-            content=m.content, sources=m.sources, created_at=m.created_at.isoformat(),
+            content=m.content, sources=m.sources, rating=m.rating,
+            created_at=m.created_at.isoformat(),
         )
         for m in msgs
     ]
@@ -103,3 +104,42 @@ def delete_conversation(
     db.delete(conv)
     db.commit()
     return {"message": "会话已删除"}
+
+
+@router.delete("/{conv_id}/messages", summary="清空会话消息")
+def clear_conversation_messages(
+    conv_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """清空会话的全部消息（保留会话本身）"""
+    conv = _get_owned_conversation(conv_id, user, db)
+    db.query(Message).filter(Message.conversation_id == conv.id).delete()
+    conv.title = "新对话"
+    db.commit()
+    return {"message": "会话已清空"}
+
+
+@router.put("/messages/{message_id}/rating", summary="评价回答")
+def rate_message(
+    message_id: int,
+    data: RatingRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """给回答点赞/点踩（仅本人会话中的消息）"""
+    msg = db.get(Message, message_id)
+    if not msg:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
+
+    # 校验消息属于当前用户的会话（防越权）
+    conv = db.get(Conversation, msg.conversation_id)
+    if not conv or conv.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
+
+    if data.rating not in ("up", "down", None):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="评价无效")
+
+    msg.rating = data.rating
+    db.commit()
+    return {"message": "评价成功"}

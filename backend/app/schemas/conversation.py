@@ -26,10 +26,15 @@ class MessageOut(BaseModel):
     role: str  # user / assistant
     content: str
     sources: str | None = None  # 引用来源（JSON）
+    rating: str | None = None  # 回答评价
     created_at: str
 
     class Config:
         from_attributes = True
+
+
+class RatingRequest(BaseModel):
+    rating: str  # up / down / None
 
 
 class ChatRequest(BaseModel):

@@ -31,3 +31,8 @@ class UserInfo(BaseModel):
     email: str | None
     is_admin: bool
     created_at: str
+
+
+class UserSettings(BaseModel):
+    top_k: int = 6  # 检索片段数（1-10）
+    show_sources: bool = True  # 是否显示引用来源

@@ -3,6 +3,16 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
 
+// ===== 统计信息 =====
+const stats = ref({ total_documents: 0, ready_documents: 0, total_chunks: 0 })
+
+async function loadStats() {
+  try {
+    const res = await request.get('/kb/stats')
+    stats.value = res
+  } catch (e) {}
+}
+
 // ===== 文档列表 =====
 const documents = ref([])
 const loading = ref(false)
@@ -17,6 +27,10 @@ async function loadDocuments() {
   }
 }
 
+async function loadAll() {
+  await Promise.all([loadDocuments(), loadStats()])
+}
+
 // ===== 上传文档 =====
 const uploadRef = ref(null)
 
@@ -26,7 +40,7 @@ async function handleUpload(options) {
   try {
     await request.post('/kb/upload', formData)
     ElMessage.success('上传成功，正在处理...')
-    loadDocuments()
+    loadAll()
   } catch (e) {
     // 错误已统一处理
   }
@@ -34,21 +48,47 @@ async function handleUpload(options) {
 
 // ===== 删除文档 =====
 async function handleDelete(row) {
-  await ElMessageBox.confirm(
-    `确定要删除文档「${row.filename}」吗？删除后不可恢复。`,
-    '警告',
-    { type: 'warning' },
-  )
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除文档「${row.filename}」吗？删除后不可恢复。`,
+      '警告',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return // 用户取消
+  }
   await request.delete(`/kb/documents/${row.id}`)
   ElMessage.success('删除成功')
-  loadDocuments()
+  loadAll()
 }
 
-onMounted(loadDocuments)
+onMounted(loadAll)
 </script>
 
 <template>
   <div class="kb-page">
+    <!-- 统计卡片 -->
+    <el-row :gutter="16" class="stats-row">
+      <el-col :span="8">
+        <el-card shadow="hover" class="stat-card">
+          <div class="stat-value">{{ stats.total_documents }}</div>
+          <div class="stat-label">文档总数</div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card shadow="hover" class="stat-card">
+          <div class="stat-value">{{ stats.ready_documents }}</div>
+          <div class="stat-label">已就绪文档</div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card shadow="hover" class="stat-card">
+          <div class="stat-value">{{ stats.total_chunks }}</div>
+          <div class="stat-label">检索片段总数</div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- 工具栏 -->
     <div class="toolbar">
       <el-upload
@@ -105,6 +145,26 @@ onMounted(loadDocuments)
   padding: 20px;
   height: 100%;
   overflow-y: auto;
+}
+
+.stats-row {
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #909399;
+  margin-top: 4px;
 }
 
 .toolbar {

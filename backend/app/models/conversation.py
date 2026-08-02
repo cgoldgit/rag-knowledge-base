@@ -30,6 +30,8 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # 引用来源（JSON 字符串：文档名、片段、相似度等）
     sources: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 回答评价：up（有用）/ down（没用）/ None（未评价）
+    rating: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

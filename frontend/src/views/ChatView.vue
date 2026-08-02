@@ -1,7 +1,8 @@
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
+import { rateMessage } from '../api/settings'
 import { useAuthStore } from '../store/auth'
 
 const auth = useAuthStore()
@@ -10,12 +11,15 @@ const auth = useAuthStore()
 const conversations = ref([])
 const currentConvId = ref(null)
 const messages = ref([])
-const loading = ref(false)
 const sending = ref(false)
 
 // ===== 输入 =====
 const inputText = ref('')
 const inputRef = ref(null)
+
+// ===== 重命名弹窗 =====
+const renameDialogVisible = ref(false)
+const renameTitle = ref('')
 
 // ===== 消息区滚动 =====
 const msgAreaRef = ref(null)
@@ -52,7 +56,6 @@ async function openConversation(id) {
   messages.value = []
   try {
     const res = await request.get(`/conversations/${id}/messages`)
-    // 解析引用来源（JSON字符串 → 对象）
     messages.value = res.map((m) => ({
       ...m,
       sources: m.sources ? JSON.parse(m.sources) : [],
@@ -62,6 +65,15 @@ async function openConversation(id) {
 }
 
 async function deleteConversation(id) {
+  try {
+    await ElMessageBox.confirm('删除后不可恢复，确定删除该会话？', '删除会话', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return // 用户取消
+  }
   await request.delete(`/conversations/${id}`)
   conversations.value = conversations.value.filter((c) => c.id !== id)
   if (currentConvId.value === id) {
@@ -69,6 +81,73 @@ async function deleteConversation(id) {
     messages.value = []
   }
   ElMessage.success('会话已删除')
+}
+
+async function clearConversation(id) {
+  try {
+    await ElMessageBox.confirm('将清空该会话的全部消息，确定继续？', '清空会话', {
+      confirmButtonText: '清空',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  await request.delete(`/conversations/${id}/messages`)
+  if (currentConvId.value === id) {
+    messages.value = []
+  }
+  ElMessage.success('会话已清空')
+  loadConversations()
+}
+
+// ===== 重命名 =====
+function openRename(conv) {
+  renameTitle.value = conv.title
+  renameDialogVisible.value = true
+}
+
+async function handleRename() {
+  if (!renameTitle.value.trim()) {
+    ElMessage.warning('名称不能为空')
+    return
+  }
+  await request.put(`/conversations/${currentConvId.value}`, { title: renameTitle.value.trim() })
+  renameDialogVisible.value = false
+  ElMessage.success('重命名成功')
+  loadConversations()
+}
+
+// ===== 回答操作 =====
+async function handleRate(msg, rating) {
+  // 点击相同评价则取消
+  const newRating = msg.rating === rating ? null : rating
+  try {
+    await rateMessage(msg.id, newRating)
+    msg.rating = newRating
+  } catch (e) {}
+}
+
+async function handleCopy(msg) {
+  try {
+    await navigator.clipboard.writeText(msg.content)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+// ===== 会话操作（更多菜单）=====
+async function handleConvCmd(cmd, conv) {
+  if (cmd === 'rename') {
+    renameTitle.value = conv.title
+    currentConvId.value = conv.id
+    renameDialogVisible.value = true
+  } else if (cmd === 'clear') {
+    await clearConversation(conv.id)
+  } else if (cmd === 'delete') {
+    await deleteConversation(conv.id)
+  }
 }
 
 // ===== 发送问题（流式）=====
@@ -80,18 +159,14 @@ async function sendMessage() {
     return
   }
 
-  // 1. 先把用户问题显示到界面（乐观更新）
-  const userMsg = { id: `temp-${Date.now()}`, role: 'user', content: text, sources: [] }
-  messages.value.push(userMsg)
-  // 2. 添加一个空的助手消息，流式填充
-  const assistantMsg = { id: `temp-${Date.now() + 1}`, role: 'assistant', content: '', sources: [], streaming: true }
-  messages.value.push(assistantMsg)
+  const userMsg = { id: `temp-u-${Date.now()}`, role: 'user', content: text, sources: [] }
+  const assistantMsg = { id: `temp-a-${Date.now()}`, role: 'assistant', content: '', sources: [], streaming: true }
+  messages.value.push(userMsg, assistantMsg)
   inputText.value = ''
   sending.value = true
   scrollToBottom()
 
   try {
-    // 用 fetch 读取 SSE 流
     const token = auth.token
     const resp = await fetch('/api/chat/stream', {
       method: 'POST',
@@ -103,10 +178,10 @@ async function sendMessage() {
     })
 
     if (!resp.ok || !resp.body) {
-      throw new Error(`请求失败: ${resp.status}`)
+      const err = await resp.json().catch(() => ({}))
+      throw new Error(err.detail || `请求失败: ${resp.status}`)
     }
 
-    // 读取流数据
     const reader = resp.body.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
@@ -116,9 +191,8 @@ async function sendMessage() {
       if (done) break
       buffer += decoder.decode(value, { stream: true })
 
-      // 按 SSE 格式（\n\n）切分事件
       const events = buffer.split('\n\n')
-      buffer = events.pop() // 最后一段可能不完整，留到下次
+      buffer = events.pop()
 
       for (const evt of events) {
         if (!evt.startsWith('data: ')) continue
@@ -130,18 +204,16 @@ async function sendMessage() {
           scrollToBottom()
         } else if (data.type === 'done') {
           assistantMsg.streaming = false
-          assistantMsg.id = `done-${Date.now()}`
         }
       }
     }
   } catch (e) {
-    assistantMsg.content += '\n（请求出错，请重试）'
-    ElMessage.error('发送失败，请重试')
+    assistantMsg.content += `\n（${e.message || '请求出错'}）`
+    ElMessage.error(e.message || '发送失败，请重试')
   } finally {
     assistantMsg.streaming = false
     sending.value = false
     scrollToBottom()
-    // 刷新会话列表（标题可能已自动更新）
     loadConversations()
   }
 }
@@ -165,11 +237,18 @@ onMounted(loadConversations)
           @click="openConversation(conv.id)"
         >
           <span class="conv-title">{{ conv.title }}</span>
-          <el-icon class="del-icon" @click.stop="deleteConversation(conv.id)">
-            <Delete />
-          </el-icon>
+          <el-dropdown trigger="click" @click.stop @command="(cmd) => handleConvCmd(cmd, conv)">
+            <el-icon class="more-icon"><MoreFilled /></el-icon>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                <el-dropdown-item command="clear">清空消息</el-dropdown-item>
+                <el-dropdown-item command="delete" divided>删除会话</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
-        <el-empty v-if="conversations.length === 0" description="暂无会话" :image-size="60" />
+        <el-empty v-if="conversations.length === 0" description="暂无会话，点击上方新建" :image-size="60" />
       </div>
     </div>
 
@@ -185,6 +264,27 @@ onMounted(loadConversations)
         >
           <div class="message-bubble" :class="msg.role">
             <div class="message-content">{{ msg.content }}<span v-if="msg.streaming" class="cursor">▍</span></div>
+
+            <!-- 助手消息操作栏 -->
+            <div v-if="msg.role === 'assistant' && !msg.streaming" class="msg-actions">
+              <el-tooltip content="复制回答">
+                <el-icon class="action-icon" @click="handleCopy(msg)"><CopyDocument /></el-icon>
+              </el-tooltip>
+              <el-tooltip content="有用">
+                <el-icon
+                  class="action-icon"
+                  :class="{ active: msg.rating === 'up' }"
+                  @click="handleRate(msg, 'up')"
+                ><CircleCheck /></el-icon>
+              </el-tooltip>
+              <el-tooltip content="没用">
+                <el-icon
+                  class="action-icon"
+                  :class="{ active: msg.rating === 'down' }"
+                  @click="handleRate(msg, 'down')"
+                ><CircleClose /></el-icon>
+              </el-tooltip>
+            </div>
 
             <!-- 引用来源（仅助手消息展示） -->
             <div v-if="msg.role === 'assistant' && msg.sources && msg.sources.length > 0" class="sources-box">
@@ -227,6 +327,15 @@ onMounted(loadConversations)
         </el-button>
       </div>
     </div>
+
+    <!-- 重命名弹窗 -->
+    <el-dialog v-model="renameDialogVisible" title="重命名会话" width="400px">
+      <el-input v-model="renameTitle" placeholder="请输入新名称" @keyup.enter="handleRename" />
+      <template #footer>
+        <el-button @click="renameDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleRename">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -283,18 +392,18 @@ onMounted(loadConversations)
   font-size: 14px;
 }
 
-.del-icon {
+.more-icon {
   color: #c0c4cc;
   opacity: 0;
   transition: opacity 0.2s;
 }
 
-.conv-item:hover .del-icon {
+.conv-item:hover .more-icon {
   opacity: 1;
 }
 
-.del-icon:hover {
-  color: #f56c6c;
+.more-icon:hover {
+  color: #2563eb;
 }
 
 .chat-main {
@@ -348,6 +457,28 @@ onMounted(loadConversations)
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+.msg-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.action-icon {
+  font-size: 16px;
+  color: #c0c4cc;
+  cursor: pointer;
+}
+
+.action-icon:hover {
+  color: #2563eb;
+}
+
+.action-icon.active {
+  color: #2563eb;
 }
 
 .sources-box {

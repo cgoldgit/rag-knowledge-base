@@ -6,7 +6,7 @@ from ..database import get_db
 from ..models import User
 from ..schemas.auth import (
     RegisterRequest, LoginRequest, ChangePasswordRequest,
-    TokenResponse, UserInfo,
+    TokenResponse, UserInfo, UserSettings,
 )
 from ..security import hash_password, verify_password, create_access_token
 from ..deps import get_current_user
@@ -73,3 +73,32 @@ def change_password(
     user.password_hash = hash_password(data.new_password)
     db.commit()
     return {"message": "密码修改成功"}
+
+
+@router.get("/settings", response_model=UserSettings, summary="获取我的设置")
+def get_settings(
+    user: User = Depends(get_current_user),
+):
+    """获取用户个性化设置（检索片段数、是否显示引用）"""
+    import json
+
+    if user.settings:
+        try:
+            return UserSettings(**json.loads(user.settings))
+        except Exception:
+            pass
+    return UserSettings()
+
+
+@router.put("/settings", response_model=UserSettings, summary="保存我的设置")
+def save_settings(
+    data: UserSettings,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """保存用户个性化设置"""
+    import json
+
+    user.settings = json.dumps(data.model_dump(), ensure_ascii=False)
+    db.commit()
+    return data

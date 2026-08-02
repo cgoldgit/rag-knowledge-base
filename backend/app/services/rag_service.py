@@ -32,14 +32,14 @@ SYSTEM_PROMPT = """你是电商平台的专业客服助手，负责回答用户�
 {history}
 """
 
-# 检索片段数（取最相关的几段）
+# 检索片段数（默认取最相关的几段，用户可在设置中调整）
 TOP_K = 6
 
 
-def _build_prompt(question: str, history: list[dict]) -> tuple[str, list[dict]]:
+def _build_prompt(question: str, history: list[dict], top_k: int = TOP_K) -> tuple[str, list[dict]]:
     """组装提示词：检索相关内容 + 拼上下文"""
-    # 1. 在知识库检索相关内容
-    sources = vector_store.search_similar(question, top_k=TOP_K)
+    # 1. 在知识库检索相关内容（混合检索 + 重排序）
+    sources = vector_store.search_similar(question, top_k=top_k)
 
     # 2. 拼装知识库资料文本
     context_parts = []
@@ -60,9 +60,9 @@ def _build_prompt(question: str, history: list[dict]) -> tuple[str, list[dict]]:
     return prompt, sources
 
 
-def generate_answer(question: str, history: list[dict]) -> tuple[str, list[dict]]:
+def generate_answer(question: str, history: list[dict], top_k: int = TOP_K) -> tuple[str, list[dict]]:
     """生成回答（一次性返回）"""
-    prompt, sources = _build_prompt(question, history)
+    prompt, sources = _build_prompt(question, history, top_k)
     messages = [
         SystemMessage(content=prompt),
         HumanMessage(content=question),
@@ -71,9 +71,9 @@ def generate_answer(question: str, history: list[dict]) -> tuple[str, list[dict]
     return response.content, sources
 
 
-def stream_answer(question: str, history: list[dict]) -> tuple[Iterator[str], list[dict]]:
+def stream_answer(question: str, history: list[dict], top_k: int = TOP_K) -> tuple[Iterator[str], list[dict]]:
     """流式生成回答（打字机效果，逐字返回）"""
-    prompt, sources = _build_prompt(question, history)
+    prompt, sources = _build_prompt(question, history, top_k)
     messages = [
         SystemMessage(content=prompt),
         HumanMessage(content=question),

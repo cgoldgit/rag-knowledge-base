@@ -43,8 +43,10 @@ async def upload_document(
             detail=f"不支持的文件格式: {ext}，支持: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    # 保存文件到上传目录（用唯一名防止冲突）
+    # 保存文件到上传目录（用唯一名防止冲突；限制 20MB 防内存溢出）
     content = await file.read()
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件超过 20MB 限制")
     safe_name = f"{uuid.uuid4().hex[:12]}_{file.filename}"
     save_path = Path(settings.UPLOAD_DIR) / safe_name
     save_path.write_bytes(content)
@@ -95,6 +97,8 @@ async def upload_document(
         doc.status = "failed"
         doc.error_message = str(e)
         db.commit()
+        # 处理失败时回滚已写入的向量（防止检索命中幽灵片段）
+        vector_store.remove_document_chunks(doc.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"文档处理失败: {e}")
 
     return _doc_out(doc)
@@ -137,3 +141,22 @@ def delete_document(
     db.delete(doc)  # 级联删除分块记录
     db.commit()
     return {"message": "文档已删除"}
+
+
+@router.get("/stats", summary="知识库统计")
+def knowledge_base_stats(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """统计：文档数、总片段数、各状态数量（管理员看板）"""
+    total_docs = db.query(KnowledgeDocument).count()
+    ready_docs = db.query(KnowledgeDocument).filter(KnowledgeDocument.status == "ready").count()
+    total_chunks = (
+        db.query(DocumentChunk).join(KnowledgeDocument)
+        .filter(KnowledgeDocument.status == "ready").count()
+    )
+    return {
+        "total_documents": total_docs,
+        "ready_documents": ready_docs,
+        "total_chunks": total_chunks,
+    }

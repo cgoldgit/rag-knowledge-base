@@ -72,6 +72,7 @@ function handleLogout() {
             </span>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item @click="router.push('/settings')">设置</el-dropdown-item>
                 <el-dropdown-item @click="router.push('/profile')">修改密码</el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>

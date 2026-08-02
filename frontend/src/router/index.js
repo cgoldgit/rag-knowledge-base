@@ -29,6 +29,11 @@ const routes = [
         name: 'Profile',
         component: () => import('../views/ProfileView.vue'),
       },
+      {
+        path: 'settings',
+        name: 'Settings',
+        component: () => import('../views/SettingsView.vue'),
+      },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },
