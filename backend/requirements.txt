@@ -1,0 +1,36 @@
+# ===== Web 框架 =====
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# ===== 数据库 =====
+sqlalchemy>=2.0.30
+pymysql>=1.1.0
+cryptography>=42.0.0
+
+# ===== Redis 缓存 =====
+redis>=5.0.0
+
+# ===== 认证与安全 =====
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+
+# ===== 配置 =====
+python-dotenv>=1.0.0
+pydantic-settings>=2.3.0
+
+# ===== LangChain（RAG 核心）=====
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-openai>=0.2.0
+langchain-chroma>=0.2.0
+langchain-text-splitters>=0.3.0
+
+# ===== 文档解析 =====
+pypdf>=4.3.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
+markdown>=3.6.0
+
+# ===== 向量存储 =====
+chromadb>=0.5.0

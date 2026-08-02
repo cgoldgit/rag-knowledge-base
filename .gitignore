@@ -1,0 +1,28 @@
+# 秘密配置（含 API 密钥），绝不能上传
+.env
+
+# 运行时产生的数据（不上传）
+backend/uploads/
+backend/chroma_data/
+
+# Python 依赖
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 前端依赖
+node_modules/
+dist/
+
+# 数据文件
+*.db
+*.sqlite3
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/

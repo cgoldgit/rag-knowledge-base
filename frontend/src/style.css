@@ -1,0 +1,32 @@
+/* 全局样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  font-family: 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+  background: #f5f7fa;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* 页面容器通用样式 */
+.page-container {
+  padding: 20px;
+}
+
+/* 问答消息内容排版 */
+.message-content {
+  line-height: 1.8;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
