@@ -13,6 +13,7 @@ class ConversationRename(BaseModel):
 class ConversationOut(BaseModel):
     id: int
     title: str
+    pinned: bool = False  # 是否置顶
     created_at: str
     updated_at: str
 
@@ -34,7 +35,7 @@ class MessageOut(BaseModel):
 
 
 class RatingRequest(BaseModel):
-    rating: str  # up / down / None
+    rating: str | None = None  # up / down / None（None 表示取消评价）
 
 
 class ChatRequest(BaseModel):

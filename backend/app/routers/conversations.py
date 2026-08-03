@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/conversations", tags=["会话"])
 
 def _conv_out(c: Conversation) -> ConversationOut:
     return ConversationOut(
-        id=c.id, title=c.title,
+        id=c.id, title=c.title, pinned=c.pinned,
         created_at=c.created_at.isoformat(), updated_at=c.updated_at.isoformat(),
     )
 
@@ -24,11 +24,11 @@ def list_conversations(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """返回当前用户的所有会话（新的在前）"""
+    """返回当前用户的所有会话（置顶的在前，其余新的在前）"""
     convs = (
         db.query(Conversation)
         .filter(Conversation.user_id == user.id)
-        .order_by(Conversation.updated_at.desc())
+        .order_by(Conversation.pinned.desc(), Conversation.updated_at.desc())
         .all()
     )
     return [_conv_out(c) for c in convs]
@@ -77,6 +77,20 @@ def list_messages(
         )
         for m in msgs
     ]
+
+
+@router.put("/{conv_id}/pin", response_model=ConversationOut, summary="置顶/取消置顶会话")
+def pin_conversation(
+    conv_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """切换会话置顶状态"""
+    conv = _get_owned_conversation(conv_id, user, db)
+    conv.pinned = not conv.pinned
+    db.commit()
+    db.refresh(conv)
+    return _conv_out(conv)
 
 
 @router.put("/{conv_id}", response_model=ConversationOut, summary="重命名会话")

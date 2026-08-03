@@ -137,9 +137,18 @@ async function handleCopy(msg) {
   }
 }
 
-// ===== 会话操作（更多菜单）=====
+// ===== 会话操作（三点菜单）=====
 async function handleConvCmd(cmd, conv) {
-  if (cmd === 'rename') {
+  if (cmd === 'pin') {
+    // 置顶/取消置顶
+    try {
+      const res = await request.put(`/conversations/${conv.id}/pin`)
+      conv.pinned = res.pinned
+      ElMessage.success(res.pinned ? '已置顶' : '已取消置顶')
+      // 刷新列表（置顶的排前面）
+      loadConversations()
+    } catch (e) {}
+  } else if (cmd === 'rename') {
     renameTitle.value = conv.title
     currentConvId.value = conv.id
     renameDialogVisible.value = true
@@ -236,17 +245,33 @@ onMounted(loadConversations)
           :class="{ active: conv.id === currentConvId }"
           @click="openConversation(conv.id)"
         >
-          <span class="conv-title">{{ conv.title }}</span>
-          <el-dropdown trigger="click" @click.stop @command="(cmd) => handleConvCmd(cmd, conv)">
-            <el-icon class="more-icon"><MoreFilled /></el-icon>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                <el-dropdown-item command="clear">清空消息</el-dropdown-item>
-                <el-dropdown-item command="delete" divided>删除会话</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <span class="conv-title">
+            <el-icon v-if="conv.pinned" class="pin-icon"><Top /></el-icon>
+            <span class="conv-name">{{ conv.title }}</span>
+          </span>
+          <div class="conv-actions" @click.stop>
+            <el-dropdown trigger="click" @command="(cmd) => handleConvCmd(cmd, conv)">
+              <el-icon class="more-icon" :class="{ active: conv.id === currentConvId }">
+                <MoreFilled />
+              </el-icon>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="pin">
+                    <el-icon><Top /></el-icon>{{ conv.pinned ? '取消置顶' : '置顶' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="rename">
+                    <el-icon><EditPen /></el-icon>重命名
+                  </el-dropdown-item>
+                  <el-dropdown-item command="clear">
+                    <el-icon><Delete /></el-icon>清空消息
+                  </el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>
+                    <el-icon><Delete /></el-icon>删除会话
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </div>
         <el-empty v-if="conversations.length === 0" description="暂无会话，点击上方新建" :image-size="60" />
       </div>
@@ -390,20 +415,65 @@ onMounted(loadConversations)
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
+.conv-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 置顶标记 */
+.pin-icon {
+  color: #f59e0b;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.conv-actions {
+  display: flex;
+  align-items: center;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+/* 设置按钮（三点）：始终可见，主题蓝醒目显示 */
 .more-icon {
-  color: #c0c4cc;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.conv-item:hover .more-icon {
-  opacity: 1;
+  font-size: 17px;
+  color: #2563eb;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 5px;
+  background: #eef3fc;
+  transition: color 0.15s, background 0.15s, transform 0.15s;
 }
 
 .more-icon:hover {
-  color: #2563eb;
+  color: #fff;
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+/* 当前选中会话的三点加深 */
+.more-icon.active {
+  color: #fff;
+  background: #2563eb;
+}
+
+/* 下拉菜单图标间距 */
+.conv-actions :deep(.el-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.conv-actions :deep(.el-dropdown-menu__item .el-icon) {
+  font-size: 15px;
 }
 
 .chat-main {

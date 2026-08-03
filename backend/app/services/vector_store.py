@@ -136,9 +136,9 @@ def _rerank(query: str, candidates: list[dict], top_n: int) -> list[dict]:
             reranked.append(item)
         return reranked
     except Exception as e:
-        # 重排序失败时退回原结果（不阻塞问答）
+        # 重排序失败时退回原结果（不阻塞问答；截断到目标数量，避免引用膨胀）
         print(f"[vector_store] 重排序失败，使用原结果: {str(e)[:80]}")
-        return candidates
+        return candidates[:top_n]
 
 
 def _embed_with_retry(func: Callable, texts, max_retries: int = 5, base_delay: float = 3.0):

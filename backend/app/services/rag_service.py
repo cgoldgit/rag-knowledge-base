@@ -47,7 +47,7 @@ def _build_prompt(question: str, history: list[dict], top_k: int = TOP_K) -> tup
         context_parts.append(f"[片段{i} 来自《{s['metadata']['filename']}》]\n{s['content']}")
     context = "\n\n".join(context_parts) if context_parts else "（知识库为空）"
 
-    # 3. 拼装对话历史（最近5轮）
+    # 3. 拼装对话历史（最近 5 条消息，约 2.5 轮对话）
     history_text = ""
     if history:
         lines = []

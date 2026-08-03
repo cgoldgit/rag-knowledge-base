@@ -29,6 +29,8 @@ function handleLogout() {
   }).then(() => {
     auth.logout()
     router.push('/login')
+  }).catch(() => {
+    // 用户取消，不做任何事
   })
 }
 </script>

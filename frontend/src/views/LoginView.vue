@@ -34,6 +34,10 @@ async function handleSubmit() {
       router.push('/')
     } else {
       // 注册
+      if (form.password.length < 6) {
+        ElMessage.warning('密码至少需要 6 位')
+        return
+      }
       if (form.password !== form.confirmPassword) {
         ElMessage.warning('两次输入的密码不一致')
         return

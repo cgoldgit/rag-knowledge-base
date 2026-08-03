@@ -18,11 +18,11 @@ def extract_text(filename: str, file_obj: BinaryIO) -> str:
 
     if ext == "pdf":
         text = _extract_pdf(file_obj)
-    elif ext in ("docx", "doc"):
+    elif ext == "docx":
         text = _extract_docx(file_obj)
     elif ext in ("txt", "md", "markdown"):
         text = file_obj.read().decode("utf-8", errors="ignore")
-    elif ext in ("xlsx", "xls"):
+    elif ext == "xlsx":
         text = _extract_xlsx(file_obj)
     else:
         raise UnsupportedFormatError(f"不支持的文件格式: {ext}")

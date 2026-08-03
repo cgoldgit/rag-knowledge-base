@@ -1,5 +1,5 @@
 """认证接口：注册、登录、修改密码、个人信息"""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -10,8 +10,12 @@ from ..schemas.auth import (
 )
 from ..security import hash_password, verify_password, create_access_token
 from ..deps import get_current_user
+from ..services import cache
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
+
+# 登录限流：同 IP 每分钟最多 10 次尝试（防密码爆破）
+LOGIN_RATE_LIMIT_PER_MINUTE = 10
 
 
 def _to_user_info(user: User) -> UserInfo:
@@ -43,8 +47,13 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse, summary="用户登录")
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
     """用户名 + 密码登录，成功后返回登录凭证"""
+    # 限流：防密码爆破
+    client_ip = request.client.host if request.client else "unknown"
+    if not cache.rate_limit(f"rl:login:{client_ip}", LOGIN_RATE_LIMIT_PER_MINUTE):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="尝试次数过多，请稍后再试")
+
     user = db.query(User).filter(User.username == data.username).first()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")

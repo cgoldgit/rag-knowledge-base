@@ -1,5 +1,6 @@
 """问答接口：处理用户提问，返回回答和引用来源"""
 import json
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -70,7 +71,7 @@ def chat(
     is_first_question = not db.query(Message).filter(Message.conversation_id == conv.id).count()
 
     # 1. 尝试命中缓存（相同问题 5 分钟内秒回；仅第一问可命中，避免多轮上下文错乱）
-    cache_key = f"qa:{data.message.strip()}"
+    cache_key = f"qa:{user.id}:{top_k}:{data.message.strip()}"  # 区分用户和检索设置，防止缓存串用
     cached = cache.get_cache(cache_key) if is_first_question else None
     if cached:
         answer, sources = cached["answer"], cached["sources"]
@@ -97,9 +98,10 @@ def chat(
     )
     db.add(assistant_msg)
 
-    # 6. 自动更新会话标题（如果还是默认的"新对话"）
+    # 6. 自动更新会话标题 + 刷新活跃时间（让会话顶到列表最前）
     if conv.title == "新对话":
         conv.title = data.message[:20]
+    conv.updated_at = datetime.now()
     db.commit()
     db.refresh(assistant_msg)
 
@@ -123,14 +125,16 @@ def chat_stream(
 
     conv = _get_owned_conversation(data.conversation_id, user, db)
 
-    # 1. 保存用户问题
+    # 1. 先加载历史（不含刚保存的问题，避免同一问题重复喂给大模型）
+    top_k = _get_user_top_k(user)
+    history = _load_history(db, conv.id)
+
+    # 2. 保存用户问题
     user_msg = Message(conversation_id=conv.id, role="user", content=data.message)
     db.add(user_msg)
     db.commit()
 
-    # 2. 加载历史 + 流式生成（使用用户设置的检索片段数）
-    top_k = _get_user_top_k(user)
-    history = _load_history(db, conv.id)
+    # 3. 流式生成（使用用户设置的检索片段数）
     stream, sources = rag_service.stream_answer(data.message, history, top_k)
 
     # 3. 拼装 SSE 输出（先发引用，再流式发内容）
@@ -139,6 +143,8 @@ def chat_stream(
 
     def save_answer(content: str, title: str):
         """流结束后保存完整回答（用独立会话，避免连接关闭问题）"""
+        if not content.strip():
+            return  # 模型调用失败未生成内容时，不存空白回答
         from ..database import SessionLocal
 
         with SessionLocal() as db2:
@@ -153,9 +159,12 @@ def chat_stream(
             db2.add(assistant_msg)
             if conv2 and conv2.title == "新对话":
                 conv2.title = title
+            if conv2:
+                conv2.updated_at = datetime.now()
             db2.commit()
 
     def event_generator():
+        saved = False
         try:
             # 先发送引用来源（前端先展示"正在引用"）
             yield f"data: {json.dumps({'type': 'sources', 'sources': sources}, ensure_ascii=False)}\n\n"
@@ -164,11 +173,14 @@ def chat_stream(
                 if chunk:
                     full_answer[0] += chunk
                     yield f"data: {json.dumps({'type': 'content', 'delta': chunk}, ensure_ascii=False)}\n\n"
-            # 最后发送完成标记
+            # 先落库再发完成信号：前端收到"完成"立即刷新列表时，能拿到已保存的标题/时间
+            save_answer(full_answer[0], data.message[:20])
+            saved = True
             yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
         finally:
-            # 无论成功/中断/异常，都保存已生成的内容（防数据丢失）
-            save_answer(full_answer[0], data.message[:20])
+            # 中断/异常时兜底保存已生成的内容（防数据丢失）；正常路径已保存，不重复存
+            if not saved:
+                save_answer(full_answer[0], data.message[:20])
 
     return StreamingResponse(
         event_generator(),

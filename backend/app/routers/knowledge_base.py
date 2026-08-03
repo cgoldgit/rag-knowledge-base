@@ -15,8 +15,8 @@ from ..services import vector_store
 
 router = APIRouter(prefix="/api/kb", tags=["知识库"])
 
-# 允许的格式
-ALLOWED_EXTENSIONS = {"pdf", "docx", "doc", "txt", "md", "markdown", "xlsx", "xls"}
+# 允许的格式（仅解析库真正支持的格式；旧版 .doc/.xls 解析不了，不接收）
+ALLOWED_EXTENSIONS = {"pdf", "docx", "txt", "md", "markdown", "xlsx"}
 
 
 def _doc_out(d: KnowledgeDocument) -> DocumentOut:
@@ -26,6 +26,14 @@ def _doc_out(d: KnowledgeDocument) -> DocumentOut:
         error_message=d.error_message, uploaded_by=d.uploaded_by,
         created_at=d.created_at.isoformat(),
     )
+
+
+def _cleanup_failed_upload(save_path: Path):
+    """处理失败时清理残留文件（忽略删除失败）"""
+    try:
+        save_path.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 @router.post("/upload", response_model=DocumentOut, summary="上传文档")
@@ -47,7 +55,9 @@ async def upload_document(
     content = await file.read()
     if len(content) > 20 * 1024 * 1024:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件超过 20MB 限制")
-    safe_name = f"{uuid.uuid4().hex[:12]}_{file.filename}"
+    # 只保留文件名部分，防止恶意路径穿越（如 ../../evil.txt）
+    raw_filename = Path(file.filename.replace("\\", "/")).name
+    safe_name = f"{uuid.uuid4().hex[:12]}_{raw_filename}"
     save_path = Path(settings.UPLOAD_DIR) / safe_name
     save_path.write_bytes(content)
 
@@ -92,6 +102,7 @@ async def upload_document(
         doc.status = "failed"
         doc.error_message = str(e)
         db.commit()
+        _cleanup_failed_upload(save_path)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         doc.status = "failed"
@@ -99,6 +110,7 @@ async def upload_document(
         db.commit()
         # 处理失败时回滚已写入的向量（防止检索命中幽灵片段）
         vector_store.remove_document_chunks(doc.id)
+        _cleanup_failed_upload(save_path)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"文档处理失败: {e}")
 
     return _doc_out(doc)
