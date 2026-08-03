@@ -78,3 +78,45 @@ class TestBuildPrompt:
         monkeypatch.setattr(rag_service.vector_store, "search_similar", fake_search)
         _build_prompt("问题", [], top_k=10)
         assert called["top_k"] == 10
+
+    def test_history为None不报错(self, monkeypatch):
+        _install_fake_search(monkeypatch, [])
+        prompt, _ = _build_prompt("问题", None)
+        assert "（无）" in prompt
+
+
+class TestGenerateAnswer:
+    """一次性回答（用假的对话模型替身，不产生真实 API 调用）"""
+
+    def test_返回回答内容与引用来源(self, monkeypatch):
+        class FakeLLM:
+            def invoke(self, messages):
+                self.messages = messages
+                return type("Resp", (), {"content": "这款手机支持快充。"})()
+
+        fake_llm = FakeLLM()
+        monkeypatch.setattr(rag_service, "_llm", fake_llm)
+        sources = [
+            {"content": "这款手机支持快充", "metadata": {"filename": "手机说明.txt"}},
+        ]
+        monkeypatch.setattr(rag_service.vector_store, "search_similar", lambda q, top_k=6: sources)
+        answer, got_sources = rag_service.generate_answer("手机支持快充吗", [])
+        assert answer == "这款手机支持快充。"
+        assert got_sources == sources
+        # 模型收到两条消息：系统提示词 + 用户问题
+        assert len(fake_llm.messages) == 2
+        assert fake_llm.messages[1].content == "手机支持快充吗"
+
+
+class TestStreamAnswer:
+    """流式回答（打字机效果）"""
+
+    def test_流式生成逐块产出(self, monkeypatch):
+        class FakeLLM:
+            def stream(self, messages):
+                return [type("C", (), {"content": t})() for t in ["你", "好"]]
+
+        monkeypatch.setattr(rag_service, "_llm", FakeLLM())
+        monkeypatch.setattr(rag_service.vector_store, "search_similar", lambda q, top_k=6: [])
+        stream, _ = rag_service.stream_answer("问题", [])
+        assert list(stream) == ["你", "好"]

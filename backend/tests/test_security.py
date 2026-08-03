@@ -59,3 +59,23 @@ class TestJWT:
             algorithm=settings.ALGORITHM,
         )
         assert decode_token(token) is None
+
+
+class TestEdge:
+    def test_decode_token_空字符串返回None(self):
+        assert decode_token("") is None
+
+    def test_decode_token_缺少签名部分返回None(self):
+        # 只有 header.payload，没有签名，应视为无效凭证
+        token = jwt.encode(
+            {"sub": "1", "username": "admin", "is_admin": True, "exp": int(time.time()) + 3600},
+            settings.SECRET_KEY,
+            algorithm=settings.ALGORITHM,
+        )
+        stripped = token.rsplit(".", 1)[0]
+        assert decode_token(stripped) is None
+
+    def test_verify_password_空密码加密后能校验(self):
+        hashed = hash_password("")
+        assert verify_password("", hashed) is True
+        assert verify_password("x", hashed) is False

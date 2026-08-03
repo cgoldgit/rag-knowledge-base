@@ -101,3 +101,19 @@ class TestRateLimit:
 
         monkeypatch.setattr(cache, "_redis", BrokenRedis())
         assert cache.rate_limit("user:1", limit=5) is True
+
+    def test_自定义窗口期生效(self, monkeypatch):
+        fake = _install_fake_redis(monkeypatch)
+        cache.rate_limit("user:1", limit=3, window_seconds=10)
+        assert fake.expirations["user:1"] == 10
+
+    def test_不同limit值生效(self, monkeypatch):
+        _install_fake_redis(monkeypatch)
+        assert cache.rate_limit("user:1", limit=2) is True
+        assert cache.rate_limit("user:1", limit=2) is True
+        assert cache.rate_limit("user:1", limit=2) is False
+
+    def test_get_cache_空字符串视为未命中(self, monkeypatch):
+        fake = _install_fake_redis(monkeypatch)
+        fake.store["empty"] = ""
+        assert cache.get_cache("empty") is None

@@ -114,3 +114,19 @@ class TestUnsupported:
             assert "zip" in str(e)
         else:
             raise AssertionError("应抛 UnsupportedFormatError")
+
+
+class TestExt:
+    def test_大写扩展名同样识别(self):
+        result = extract_text("NOTES.TXT", io.BytesIO("你好".encode("utf-8")))
+        assert result == "你好"
+
+    def test_markdown扩展名识别(self):
+        result = extract_text("doc.markdown", io.BytesIO("# 标题".encode("utf-8")))
+        assert result == "# 标题"
+
+    def test_txt含非法UTF8字节不报错(self):
+        # 二进制内容（非 UTF-8 字节）应被忽略，不抛异常
+        result = extract_text("bin.txt", io.BytesIO(b"hello \xff\xfe world"))
+        assert "hello" in result
+        assert "world" in result
